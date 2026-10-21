@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3x34yu16FGEAgltM2Em6/E4pwAEt/zcq7Nz9LFic854=' https://esm.sh https://*.esm.sh; style-src 'unsafe-inline'; connect-src https://wgfpbkwjrejnlliznfdu.supabase.co; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MMpGp94alHphFl3iMdz3hgdPJ1fRfZSvg1UWXMED7wk=' https://esm.sh https://*.esm.sh; style-src 'unsafe-inline'; connect-src https://wgfpbkwjrejnlliznfdu.supabase.co; base-uri 'none'; form-action 'self'">
   <title>EasyCRM access</title>
   <style>
     :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; }
@@ -39,6 +39,12 @@
         <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
         <button class="primary" type="submit">Sign in</button>
       </form>
+      <button class="secondary" id="use-password" type="button">Use password instead</button>
+      <form id="password-form" hidden>
+        <label for="password">CRM password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="primary" type="submit">Sign in with password</button>
+      </form>
     </section>
     <section id="consent" hidden>
       <p><strong id="client-name"></strong> wants to access your EasyCRM account.</p>
@@ -64,6 +70,7 @@
     const consent = document.getElementById("consent");
     const emailInput = document.getElementById("email");
     const codeForm = document.getElementById("code-form");
+    const passwordForm = document.getElementById("password-form");
     const show = (text) => { message.textContent = text; };
     const urlError = new URL(location.href).searchParams.get("error_description")
       || new URLSearchParams(location.hash.slice(1)).get("error_description");
@@ -126,6 +133,31 @@
         token: document.getElementById("code").value.trim(),
         type: "email",
       });
+      if (error) {
+        show(error.message);
+        button.disabled = false;
+        return;
+      }
+      signIn.hidden = true;
+      await start();
+    });
+
+    document.getElementById("use-password").addEventListener("click", () => {
+      passwordForm.hidden = false;
+      document.getElementById("password").focus();
+    });
+
+    passwordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector("button");
+      button.disabled = true;
+      show("Signing in…");
+      const passwordInput = document.getElementById("password");
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailInput.value.trim(),
+        password: passwordInput.value,
+      });
+      passwordInput.value = "";
       if (error) {
         show(error.message);
         button.disabled = false;
