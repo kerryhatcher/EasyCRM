@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-px4vpoHrg5s/vJKqTc3Hls1Way2mMNJHx5D7vwGVw9s=' https://esm.sh https://*.esm.sh; style-src 'unsafe-inline'; connect-src https://wgfpbkwjrejnlliznfdu.supabase.co; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-3x34yu16FGEAgltM2Em6/E4pwAEt/zcq7Nz9LFic854=' https://esm.sh https://*.esm.sh; style-src 'unsafe-inline'; connect-src https://wgfpbkwjrejnlliznfdu.supabase.co; base-uri 'none'; form-action 'self'">
   <title>EasyCRM access</title>
   <style>
     :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; }
@@ -28,11 +28,16 @@
     <h1>EasyCRM access</h1>
     <p id="message" role="status">Checking sign-in…</p>
     <section id="sign-in" hidden>
-      <p>Sign in with your CRM email. We’ll send a one-time link to your inbox.</p>
+      <p>Sign in with your CRM email. We’ll send a one-time code to your inbox.</p>
       <form id="email-form">
         <label for="email">Email address</label>
         <input id="email" type="email" autocomplete="email" required>
-        <button class="primary" type="submit">Send sign-in link</button>
+        <button class="primary" type="submit">Send sign-in code</button>
+      </form>
+      <form id="code-form" hidden>
+        <label for="code">Code from your email</label>
+        <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
+        <button class="primary" type="submit">Sign in</button>
       </form>
     </section>
     <section id="consent" hidden>
@@ -57,7 +62,11 @@
     const message = document.getElementById("message");
     const signIn = document.getElementById("sign-in");
     const consent = document.getElementById("consent");
+    const emailInput = document.getElementById("email");
+    const codeForm = document.getElementById("code-form");
     const show = (text) => { message.textContent = text; };
+    const urlError = new URL(location.href).searchParams.get("error_description")
+      || new URLSearchParams(location.hash.slice(1)).get("error_description");
 
     async function start() {
       if (!authorizationId) {
@@ -66,7 +75,7 @@
       }
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (!user) {
-        show(userError && userError.name !== "AuthSessionMissingError" ? userError.message : "");
+        show(urlError || (userError && userError.name !== "AuthSessionMissingError" ? userError.message : ""));
         signIn.hidden = false;
         return;
       }
@@ -91,16 +100,39 @@
       event.preventDefault();
       const button = event.currentTarget.querySelector("button");
       button.disabled = true;
-      show("Sending sign-in link…");
-      const email = document.getElementById("email").value.trim();
+      show("Sending sign-in code…");
+      const email = emailInput.value.trim();
       const redirect = new URL(location.href);
       redirect.hash = "";
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: redirect.toString(), shouldCreateUser: false },
       });
-      show(error ? error.message : "Check your inbox and open the sign-in link in this browser.");
+      show(error ? error.message : "Check your inbox and enter the code below.");
+      if (!error) {
+        codeForm.hidden = false;
+        document.getElementById("code").focus();
+      }
       button.disabled = false;
+    });
+
+    codeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector("button");
+      button.disabled = true;
+      show("Verifying code…");
+      const { error } = await supabase.auth.verifyOtp({
+        email: emailInput.value.trim(),
+        token: document.getElementById("code").value.trim(),
+        type: "email",
+      });
+      if (error) {
+        show(error.message);
+        button.disabled = false;
+        return;
+      }
+      signIn.hidden = true;
+      await start();
     });
 
     for (const decision of ["approve", "deny"]) {
