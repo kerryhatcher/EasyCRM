@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-20T21:00:00-04:00",
+  "title": "Design System: EasyCRM",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Register Teal", "canonical": "#0a4f52" },
+      "background": { "role": "neutral", "displayName": "Cool Paper", "canonical": "#f8faf9" },
+      "ink": { "role": "neutral", "displayName": "Deep Ink", "canonical": "#162a32" }
+    },
+    "typographyMeta": {
+      "heading": { "displayName": "Record heading", "purpose": "Selected record names and major form titles." },
+      "body": { "displayName": "Interface", "purpose": "Navigation, labels, forms, and data." }
+    },
+    "shadows": [
+      { "name": "panel", "value": "0 14px 40px #0d343412", "purpose": "Lift the sign-in panel." }
+    ],
+    "motion": [
+      { "name": "state", "value": "180ms ease", "purpose": "Hover and selection feedback." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "800px" },
+      { "name": "phone", "value": "620px" }
+    ]
+  },
+  "components": [
+    { "name": "Primary button", "kind": "button", "refersTo": "button-primary", "description": "The main action in a section or form.", "html": "<button class=\"ds-primary\">Add contact</button>", "css": ".ds-primary{background:#0a4f52;color:#fff;border:0;border-radius:7px;padding:8px 14px;font:700 13px 'DM Sans',Arial,sans-serif}.ds-primary:hover{background:#083e41}.ds-primary:focus-visible{outline:3px solid #54a7a5;outline-offset:2px}" },
+    { "name": "Record row", "kind": "custom", "refersTo": "record-selected", "description": "Shows the selected record in the index.", "html": "<button class=\"ds-record\"><span class=\"ds-avatar\">SA</span><span>Sarah Anderson</span></button>", "css": ".ds-record{display:flex;align-items:center;gap:13px;width:100%;padding:12px 25px;background:#eaf4f3;color:#162a32;border:0;font:700 13px 'DM Sans',Arial,sans-serif;text-align:left}.ds-avatar{display:grid;place-items:center;width:39px;height:39px;border-radius:50%;background:#d8e9e8;color:#0a4f52}.ds-record:focus-visible{outline:3px solid #54a7a5;outline-offset:-3px}" }
+  ],
+  "narrative": {
+    "northStar": "The Correspondence Register",
+    "overview": "A stable index, a focused record sheet, and a chronological account of interactions make personal CRM work direct and calm.",
+    "keyCharacteristics": ["Restrained teal", "Fine rules", "Readable record typography", "Direct form actions"],
+    "rules": [{ "name": "One action color", "body": "Reserve teal for the current place, links, and primary actions.", "section": "colors" }],
+    "dos": ["Keep record details and history easy to scan."],
+    "donts": ["Add unsupported metrics or decorative cards."]
+  }
+}

@@ -39,6 +39,7 @@ build/Release
 
 # Dependency directories
 node_modules/
+web/app/.wrangler/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -108,6 +109,13 @@ dist
 .docusaurus
 
 # Serverless directories
+.env
+__pycache__/
+.venv/
+.uv-python/
+.uv-cache/
+private/
+.deno/
 .serverless/
 
 # FuseBox cache

@@ -1,0 +1,126 @@
+---
+import '../styles.css';
+
+const apiUrl = 'https://crm-api.kerryhatcher.com/functions/v1';
+const connectionGroups = [
+  {
+    title: 'CardDAV',
+    description: 'Sync your contacts with your phone or another address book app.',
+    links: [
+      { id: 'carddav-url', label: 'CardDAV server URL', url: `${apiUrl}/carddav/` },
+      { id: 'addressbook-url', label: 'Address book URL', url: `${apiUrl}/carddav/addressbooks/default/` },
+    ],
+    help: 'Use your CRM account email as the username and your account password. Enter the full server URL; if your app asks for a specific address book, use the address book URL.',
+  },
+  {
+    title: 'MCP',
+    description: 'Connect an AI assistant to your contacts, organizations, and activity.',
+    links: [
+      { id: 'mcp-url', label: 'MCP server URL', url: `${apiUrl}/crm-mcp` },
+    ],
+    help: 'Add this URL as an HTTP MCP server in a client that supports OAuth. Sign in with your CRM account and approve the connection. Each client needs a registered OAuth app with its exact callback URL.',
+  },
+];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8f7" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>EasyCRM</title>
+    <meta name="description" content="Your contacts, organizations, and conversations in one place." />
+  </head>
+  <body>
+    <div id="auth-screen" class="auth-screen" hidden>
+      <div class="auth-brand">Easy<span>CRM</span></div>
+      <main class="auth-panel">
+        <h1>Welcome to your CRM</h1>
+        <p>Sign in to see your people, organizations, and conversations.</p>
+        <form id="auth-form">
+          <label for="auth-email">Email address</label>
+          <input id="auth-email" name="email" type="email" autocomplete="email" required />
+          <label for="auth-password">Password</label>
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" required />
+          <button class="button primary full" type="submit">Sign in</button>
+        </form>
+        <button id="code-toggle" class="text-button" type="button">Use an email code instead</button>
+        <form id="code-form" hidden>
+          <label for="auth-code">Code from your email</label>
+          <input id="auth-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" />
+          <button class="button primary full" type="submit">Verify code</button>
+        </form>
+        <p id="auth-status" class="form-status" role="status"></p>
+      </main>
+    </div>
+
+    <div id="app" class="app-shell" hidden>
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="EasyCRM home">Easy<span>CRM</span></a>
+        <div class="topbar-context">Your address book</div>
+        <div class="account">
+          <span id="account-email"></span>
+          <button id="sign-out" class="text-button" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <aside class="sidebar" aria-label="Main navigation">
+        <nav class="main-nav">
+          <button type="button" data-view="contacts" class="nav-item active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="3.5"/><path d="M4.5 20v-2.5a7.5 7.5 0 0 1 15 0V20z"/></svg>Contacts</button>
+          <button type="button" data-view="organizations" class="nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V5h11v15M15 10h5v10M8 9h2m2 0h0M8 13h2m2 0h0M8 17h2m-6 3h16"/></svg>Organizations</button>
+          <button type="button" data-page="connections" class="nav-item" title="Connections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-1.5 1.5a3.5 3.5 0 0 1-5-5L6 7a3.5 3.5 0 0 1 5 0m2 10a3.5 3.5 0 0 0 5 0l4.5-4.5a3.5 3.5 0 0 0-5-5L16 9"/></svg>Connections</button>
+        </nav>
+        <p class="sidebar-note">A little more context for every connection.</p>
+      </aside>
+
+      <main id="records-workspace" class="workspace">
+        <section class="list-panel" aria-label="Records">
+          <div class="list-heading">
+            <h1 id="view-title">Contacts</h1>
+            <button id="new-record" class="button primary" type="button"><svg class="plus-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span id="new-label">Add contact</span></button>
+          </div>
+          <label class="search-field" for="record-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.6 15.6 4.3 4.3"/></svg>
+            <input id="record-search" type="search" aria-label="Search contacts" placeholder="Search contacts" autocomplete="off" />
+          </label>
+          <div class="list-meta"><span id="record-count">Loading…</span><span>Sorted by name</span></div>
+          <div id="record-list" class="record-list" aria-live="polite"></div>
+          <button id="load-more" class="button subtle load-more" type="button" hidden>Load more</button>
+        </section>
+        <section id="detail-panel" class="detail-panel" aria-label="Record details" aria-live="polite"></section>
+      </main>
+      <main id="connections-page" class="integration-page" aria-labelledby="connections-title" hidden>
+        <div class="integration-content">
+          <header class="integration-heading">
+            <h1 id="connections-title" tabindex="-1">Connections</h1>
+            <p>Copy these URLs into the apps you want to connect to EasyCRM.</p>
+          </header>
+          {connectionGroups.map((group) => (
+            <section class="integration-section" aria-labelledby={`${group.links[0].id}-heading`}>
+              <h2 id={`${group.links[0].id}-heading`}>{group.title}</h2>
+              <p>{group.description}</p>
+              <div class="endpoint-list">
+                {group.links.map((link) => (
+                  <div class="endpoint-field">
+                    <label for={link.id}>{link.label}</label>
+                    <div class="endpoint-control">
+                      <textarea id={link.id} readonly rows="2" spellcheck="false" autocomplete="off">{link.url}</textarea>
+                      <button class="button outline" type="button" data-copy-target={link.id} aria-label={`Copy ${link.label}`}>Copy URL</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p class="integration-help">{group.help}</p>
+            </section>
+          ))}
+        </div>
+      </main>
+      <div id="toast" class="toast" role="status" hidden></div>
+    </div>
+    <script>
+      import '../app.ts';
+    </script>
+  </body>
+</html>

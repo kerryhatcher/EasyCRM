@@ -1,0 +1,1 @@
+The `easycrm-api` Worker is detached from `crm-api.kerryhatcher.com` following the migration to the native Supabase custom domain. This source is retained only for recovery. There is intentionally no deployment configuration here; do not reattach the production hostname.

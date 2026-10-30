@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "easycrm-web",
+  "account_id": "6d837580a4d0641139ecada9e74076b8",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-20",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "easycrm-media" }],
+  "vars": {
+    "SUPABASE_URL": "https://wgfpbkwjrejnlliznfdu.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_fzbWR-ofh2QQPdv8-o_W_w__rrMIP3d"
+  },
+  "routes": [{ "pattern": "crm.kerryhatcher.com", "custom_domain": true }]
+}
