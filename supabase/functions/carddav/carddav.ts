@@ -42,6 +42,8 @@ const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true,
 const authCache = new Map<string, { token: string; userId: string; until: number }>();
 const SELECT = "id,owner_id,name,email,phone,company,title,info,carddav_href,carddav_uid,carddav_vcard,updated_at,deleted_at";
 const DAV_HEADERS = { "DAV": "1, 3, addressbook", "Allow": "OPTIONS, PROPFIND, REPORT, GET, PUT, DELETE" };
+const PUBLIC_BASE = "/functions/v1/carddav";
+const PUBLIC_ORIGIN = "https://crm-api.kerryhatcher.com";
 
 function response(body: string | null, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
@@ -391,7 +393,8 @@ async function report(ctx: Context, base: string, path: string, body: string): P
   } else if (rootName === "addressbook-multiget") {
     for (const requested of asArray(root.href as string | string[] | undefined)) {
       const url = new URL(String(requested), `${ctx.url}${paths(base).book}`);
-      const href = url.origin === new URL(ctx.url).origin && cardName(url.pathname.slice(base.length));
+      const sameService = url.origin === new URL(ctx.url).origin || url.origin === PUBLIC_ORIGIN;
+      const href = sameService && url.pathname.startsWith(base + "/") && cardName(url.pathname.slice(base.length));
       const contact = href && await find(ctx, href);
       items.push(contact && !contact.deleted_at ?
         item(cardHref(base, contact), await cardProps(contact, true)) : item(String(requested), "", 404));
@@ -456,8 +459,11 @@ export async function handle(request: Request, suppliedEnv?: Environment, fetche
     const marker = "/carddav";
     const index = url.pathname.indexOf(marker);
     if (index < 0) throw new HttpError(404, "CardDAV route not found");
-    const base = url.pathname.slice(0, index + marker.length);
-    let path = url.pathname.slice(base.length) || "/";
+    const routeBase = url.pathname.slice(0, index + marker.length);
+    // Supabase strips /functions/v1 from the internal request URL. DAV hrefs
+    // must still point at the public gateway paths clients can request.
+    const base = PUBLIC_BASE;
+    let path = url.pathname.slice(routeBase.length) || "/";
     if (["/addressbooks", "/addressbooks/default", "/principal"].includes(path)) path += "/";
     if (request.method === "OPTIONS") return response(null, 200, DAV_HEADERS);
     const env = suppliedEnv || {

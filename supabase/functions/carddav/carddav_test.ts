@@ -5,7 +5,7 @@ const USER = "ae0e3c43-f3db-446e-83d7-f1291349ae84";
 const env: Environment = { SUPABASE_URL: "https://example.supabase.co", SUPABASE_ANON_KEY: "public-test-key" };
 const basic = "Basic " + btoa("test@example.com:correct-password");
 
-function fixture() {
+function fixture(base = BASE) {
   const contacts: Record<string, unknown>[] = [];
   let revision = 0;
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -46,7 +46,7 @@ function fixture() {
     return Response.json({ error: "method" }, { status: 405 });
   }) as typeof fetch;
   const send = (path: string, method: string, body?: string, headers: Record<string, string> = {}) =>
-    handle(new Request(BASE + path, { method, headers: { Authorization: basic, ...headers }, body }), env, fetcher);
+    handle(new Request(base + path, { method, headers: { Authorization: basic, ...headers }, body }), env, fetcher);
   return { send, contacts };
 }
 
@@ -55,6 +55,30 @@ Deno.test("requires Basic authentication and advertises DAV methods", async () =
   if (options.status !== 200 || !options.headers.get("DAV")?.includes("addressbook")) throw new Error("missing DAV support");
   const unauthorized = await handle(new Request(BASE, { method: "PROPFIND" }), env);
   if (unauthorized.status !== 401 || !unauthorized.headers.get("WWW-Authenticate")) throw new Error("missing Basic challenge");
+});
+
+Deno.test("discovery behind the Supabase gateway advertises public function paths", async () => {
+  const { send } = fixture("http://edge-runtime/carddav");
+  const principal = await send("/", "PROPFIND", undefined, { Depth: "0" });
+  const body = await principal.text();
+  if (principal.status !== 207 || !body.includes('<D:href>/functions/v1/carddav/</D:href>') ||
+      !body.includes('<D:href>/functions/v1/carddav/addressbooks/</D:href>')) {
+    throw new Error(`Gateway discovery returned unreachable URLs: ${body}`);
+  }
+  const home = await send("/addressbooks/", "PROPFIND", undefined, { Depth: "1" });
+  if (!(await home.text()).includes('<D:href>/functions/v1/carddav/addressbooks/default/</D:href>')) {
+    throw new Error("Gateway address book discovery returned an internal URL");
+  }
+  await send("/addressbooks/default/gateway.vcf", "PUT",
+    "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:gateway-test\r\nFN:Gateway Test\r\nEND:VCARD\r\n");
+  for (const [origin, expected] of [["https://crm-api.kerryhatcher.com", "Gateway Test"],
+    ["https://unrelated.example", "404 Not Found"]]) {
+    const report = await send("/addressbooks/default/", "REPORT",
+      `<C:addressbook-multiget xmlns:C="urn:ietf:params:xml:ns:carddav" xmlns:D="DAV:"><D:href>${origin}/functions/v1/carddav/addressbooks/default/gateway.vcf</D:href></C:addressbook-multiget>`);
+    if (report.status !== 207 || !(await report.text()).includes(expected)) {
+      throw new Error(`Unexpected multiget response for ${origin}`);
+    }
+  }
 });
 
 Deno.test("discovers an address book and round trips a vCard", async () => {
