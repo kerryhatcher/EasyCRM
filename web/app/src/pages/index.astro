@@ -70,6 +70,7 @@ const connectionGroups = [
         <nav class="main-nav">
           <button type="button" data-view="contacts" class="nav-item active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7.5" r="3.5"/><path d="M4.5 20v-2.5a7.5 7.5 0 0 1 15 0V20z"/></svg>Contacts</button>
           <button type="button" data-view="organizations" class="nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V5h11v15M15 10h5v10M8 9h2m2 0h0M8 13h2m2 0h0M8 17h2m-6 3h16"/></svg>Organizations</button>
+          <button type="button" data-page="audit" class="nav-item" title="Audit &amp; history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M4 10a8 8 0 1 1 1 8m7-12v6l4 2"/></svg>Audit &amp; history</button>
           <button type="button" data-page="connections" class="nav-item" title="Connections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 6-1.5 1.5a3.5 3.5 0 0 1-5-5L6 7a3.5 3.5 0 0 1 5 0m2 10a3.5 3.5 0 0 0 5 0l4.5-4.5a3.5 3.5 0 0 0-5-5L16 9"/></svg>Connections</button>
         </nav>
         <p class="sidebar-note">A little more context for every connection.</p>
@@ -91,6 +92,7 @@ const connectionGroups = [
         </section>
         <section id="detail-panel" class="detail-panel" aria-label="Record details" aria-live="polite"></section>
       </main>
+      <main id="audit-page" class="integration-page" aria-labelledby="audit-title" hidden></main>
       <main id="connections-page" class="integration-page" aria-labelledby="connections-title" hidden>
         <div class="integration-content">
           <header class="integration-heading">

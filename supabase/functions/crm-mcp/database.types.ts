@@ -14,6 +14,26 @@ export type Database = {
   };
   public: {
     Tables: {
+      audit_events: {
+        Row: {
+          id: string;
+          sequence: number;
+          transaction_id: number;
+          table_name: string;
+          record_id: string;
+          owner_id: string;
+          actor_id: string | null;
+          operation: string;
+          before_data: Json | null;
+          after_data: Json | null;
+          occurred_at: string;
+          reverts_transaction_id: number | null;
+          reason: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       contact_organization_relationships: {
         Row: {
           contact_id: string;
@@ -118,6 +138,7 @@ export type Database = {
           carddav_href: string;
           carddav_uid: string;
           carddav_vcard: string | null;
+          details: Json;
           company: string | null;
           created_at: string;
           deleted_at: string | null;
@@ -134,6 +155,7 @@ export type Database = {
           carddav_href?: string;
           carddav_uid: string;
           carddav_vcard?: string | null;
+          details?: Json;
           company?: string | null;
           created_at?: string;
           deleted_at?: string | null;
@@ -150,6 +172,7 @@ export type Database = {
           carddav_href?: string;
           carddav_uid?: string;
           carddav_vcard?: string | null;
+          details?: Json;
           company?: string | null;
           created_at?: string;
           deleted_at?: string | null;
@@ -299,7 +322,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      rollback_audit_event: {
+        Args: { event_id: string; reason: string };
+        Returns: Json;
+      };
     };
     Enums: {
       [_ in never]: never;

@@ -27,6 +27,17 @@ confirm the intended record when names are ambiguous.
 - Use `create_contact`, `update_contact`, `create_organization`, or
   `update_organization` for requested changes. Set only fields the user supplied;
   omit unchanged fields. Use `null` only when the user intends to clear a field.
+- Rich fields are under `details`: structured names, labeled emails/phones/websites,
+  postal addresses, birthdays, nicknames, radio callsigns (`callsigns`), tags
+  (`categories`), social profiles,
+  related names, dates, and opaque vCard properties. Read the full contact before
+  editing an array: top-level detail keys patch, but supplied arrays replace.
+  Preserve labels, types, parameters, and all other entries. Use empty arrays to
+  clear lists, empty strings to clear name parts, and null to clear birthday.
+  Display name is independent of structured first/last names. Legacy email/phone
+  updates change the preferred (or first) entry; clearing one promotes the next.
+  Business address-book cards use `details.kind = "organization"`; this does not
+  create an organization record or relationship.
 - Check likely duplicates before creating a record. Do not merge or overwrite
   records merely because their names match.
 - Use `add_history` for notes, calls, emails, meetings, and other events. Record
@@ -40,6 +51,18 @@ confirm the intended record when names are ambiguous.
   ID returned by a relationship lookup, not a contact or organization ID.
 - The MCP server has no contact or organization deletion tool. Do not simulate
   deletion by blanking fields or claim it was done.
+
+## Audit and rollback
+
+- Use `list_audit_events` for saved before/after versions of contacts, organizations,
+  activity, and links, including deleted rows. Filter by `table_name` and `record_id`.
+  Ordinary reads are not audited. The existing `list_history` remains contact activity.
+- Before rollback, query by `transaction_id` and paginate through **all** its events.
+  Explain the affected records; rollback undoes the entire transaction together.
+- Use `rollback_audit_event` only when the user requests undoing changes, with an
+  event ID returned by the audit query and a meaningful reason. It refuses newer
+  edits, repeated rollback, and unsafe dependent records. Report conflicts; do
+  not work around them by overwriting current values. Rollbacks are also audited.
 
 ## Ground the response
 

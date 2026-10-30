@@ -18,6 +18,8 @@ class FakeClient:
 
     def table(self, method, name, params=None, payload=None):
         self.calls.append((method, name, params, payload))
+        if method == "GET" and name == "audit_events":
+            return [{"id": LINK, "operation": "UPDATE"}]
         if method == "GET" and name == "contacts":
             return [{"id": CONTACT, "owner_id": OWNER, "name": "Ada"}]
         if method == "GET" and name == "organizations":
@@ -39,6 +41,63 @@ class CliTests(unittest.TestCase):
         result = self.runner.invoke(easycrm.app, list(args))
         self.assertEqual(result.exit_code, 0, result.output)
         return json.loads(result.stdout)
+
+    def test_audit_filters_deleted_records_without_contact_lookup(self):
+        self.invoke(
+            "audit",
+            "--table",
+            "contacts",
+            "--record",
+            CONTACT,
+            "--transaction",
+            "123",
+            "--limit",
+            "10",
+            "--offset",
+            "20",
+        )
+        self.assertEqual(
+            self.client.calls,
+            [
+                (
+                    "GET",
+                    "audit_events",
+                    {
+                        "select": "*",
+                        "order": "sequence.desc",
+                        "limit": 10,
+                        "offset": 20,
+                        "table_name": "eq.contacts",
+                        "record_id": "eq." + CONTACT,
+                        "transaction_id": "eq.123",
+                    },
+                    None,
+                )
+            ],
+        )
+
+    def test_rollback_uses_authenticated_rpc_and_requires_reason(self):
+        self.invoke("rollback", LINK, "--reason", "Wrong phone number")
+        self.assertEqual(
+            self.client.calls[-1],
+            (
+                "POST",
+                "rpc/rollback_audit_event",
+                None,
+                {
+                    "event_id": LINK,
+                    "reason": "Wrong phone number",
+                },
+            ),
+        )
+        for args in [
+            ("rollback", LINK),
+            ("rollback", LINK, "--reason", " "),
+            ("audit", "--table", "users"),
+            ("audit", "--limit", "101"),
+        ]:
+            result = self.runner.invoke(easycrm.app, list(args))
+            self.assertNotEqual(result.exit_code, 0)
 
     def test_add_preserves_json_and_payload(self):
         result = self.invoke("add", "--name", " Ada ", "--email", "ada@example.com")
@@ -105,6 +164,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             json.loads(result.stderr), {"error": "contact not found or inaccessible"}
         )
+
+    def test_details_patch_and_invalid_json(self):
+        self.invoke(
+            "update",
+            CONTACT,
+            "--details",
+            '{"first_name":"Ada","emails":[{"value":"ada@example.com","label":"Work"}]}',
+        )
+        payload = self.client.calls[-1][3]
+        self.assertEqual(payload["details"]["first_name"], "Ada")
+        self.assertNotIn("email", payload)
+        for value in ("[]", "null", "{broken"):
+            result = self.runner.invoke(
+                easycrm.app, ["update", CONTACT, "--details", value]
+            )
+            self.assertNotEqual(result.exit_code, 0)
 
 
 if __name__ == "__main__":

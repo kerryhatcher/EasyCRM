@@ -1,3 +1,6 @@
+import { createAuditPage } from './audit';
+import { effectiveContactDetails } from '../../../supabase/functions/_shared/vcard-details';
+import { contactDetailFields, contactDetailsForm, readContactDetails, addContactValue, type ContactDetails } from './contact-fields';
 import { createClient } from '@supabase/supabase-js';
 
 const db = createClient(
@@ -7,7 +10,7 @@ const db = createClient(
 );
 
 type View = 'contacts' | 'organizations';
-type Contact = { id: string; owner_id: string; name: string; email: string | null; phone: string | null; company: string | null; title: string | null; info: string | null; created_at: string; updated_at: string };
+type Contact = { carddav_vcard?: string | null; details?: ContactDetails; id: string; owner_id: string; name: string; email: string | null; phone: string | null; company: string | null; title: string | null; info: string | null; created_at: string; updated_at: string };
 type Organization = { id: string; owner_id: string; name: string; kind: string; email: string | null; phone: string | null; website: string | null; address: string | null; info: string | null; created_at: string; updated_at: string };
 type History = { id: string; kind: string; body: string; happened_at: string };
 type Link = { id: string; name: string; label: string; target_id: string; notes: string | null };
@@ -27,6 +30,8 @@ const requireData = <T>(result: { data: T | null; error: { message: string } | n
 
 let view: View = 'contacts';
 let connectionsOpen = false;
+let auditOpen = false;
+const auditPage = createAuditPage(db, document.querySelector<HTMLElement>('#audit-page')!);
 let records: RecordRow[] = [];
 let selectedId: string | null = null;
 let selected: RecordRow | null = null;
@@ -189,6 +194,7 @@ async function selectRecord(id: string) {
   try {
     const row = requireData(await db.from(view).select('*').eq('id', id).single()) as RecordRow;
     if (request !== detailRequest) return;
+    if (view === 'contacts') { const c = row as Contact; c.details = effectiveContactDetails({ ...c, carddav_vcard: c.carddav_vcard ?? null }); }
     selected = row;
     if (view === 'contacts') await renderContact(row as Contact, request);
     else await renderOrganization(row as Organization, request);
@@ -220,7 +226,7 @@ async function contactLinks(contact: Contact) {
 }
 
 function detailHeader(row: RecordRow, subtitle: string) {
-  return `<div class="detail-header"><button class="back-button" type="button" data-action="back">Back to ${view === 'contacts' ? 'contacts' : 'organizations'}</button><div class="photo-control">${avatarMarkup(row, 'large')}<button class="photo-button" type="button" data-action="choose-photo" aria-label="Upload profile image for ${esc(row.name)}" title="Upload profile image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h4l1.5-2h5L16 7h4v12H4z"/><circle cx="12" cy="13" r="3"/></svg></button></div><input id="profile-image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden /><div class="identity"><h2>${esc(row.name)}</h2><p>${esc(subtitle)}</p><button class="remove-photo text-button" type="button" data-action="remove-photo" hidden>Remove photo</button></div><button class="button outline edit-button" type="button" data-action="edit">Edit details</button></div>`;
+  return `<div class="detail-header"><button class="back-button" type="button" data-action="back">Back to ${view === 'contacts' ? 'contacts' : 'organizations'}</button><div class="photo-control">${avatarMarkup(row, 'large')}<button class="photo-button" type="button" data-action="choose-photo" aria-label="Upload profile image for ${esc(row.name)}" title="Upload profile image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h4l1.5-2h5L16 7h4v12H4z"/><circle cx="12" cy="13" r="3"/></svg></button></div><input id="profile-image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden /><div class="identity"><h2>${esc(row.name)}</h2><p>${esc(subtitle)}</p><button class="remove-photo text-button" type="button" data-action="remove-photo" hidden>Remove photo</button></div><div class="record-actions"><button class="button outline" type="button" data-action="audit">Change history</button><button class="button outline" type="button" data-action="edit">Edit details</button></div></div>`;
 }
 
 function detailField(label: string, value: string | null, type?: 'email' | 'phone' | 'url') {
@@ -248,7 +254,7 @@ async function renderContact(contact: Contact, request = detailRequest) {
   const history = requireData(historyResult) as History[];
   const historyCount = historyResult.count ?? history.length;
   $('#detail-panel').innerHTML = `${detailHeader(contact, [contact.title, contact.company].filter(Boolean).join(' · ') || 'Contact')}
-    <div class="detail-content"><div class="overview-grid"><section class="about-section"><div class="section-heading"><h3>About</h3></div><dl class="field-grid">${detailField('Email', contact.email, 'email')}${detailField('Phone', contact.phone, 'phone')}${detailField('Company', contact.company)}${detailField('Title', contact.title)}</dl>${contact.info ? `<div class="info-block"><span>Notes about ${esc(contact.name.split(' ')[0])}</span><p>${esc(contact.info)}</p></div>` : ''}</section>
+    <div class="detail-content"><div class="overview-grid"><section class="about-section"><div class="section-heading"><h3>About</h3></div><dl class="field-grid">${detailField('Company', contact.company)}${detailField('Title', contact.title)}</dl>${contactDetailFields(contact.details, contact.email, contact.phone)}${contact.info ? `<div class="info-block"><span>Notes about ${esc(contact.name.split(' ')[0])}</span><p>${esc(contact.info)}</p></div>` : ''}</section>
     <aside class="connections"><section><div class="section-heading"><h3>People</h3><button type="button" class="text-button" data-action="link-person">Add</button></div>${linkList(links.people, 'person')}</section><section><div class="section-heading"><h3>Organizations</h3><button type="button" class="text-button" data-action="link-organization">Add</button></div>${linkList(links.organizations, 'organization')}</section></aside></div>
     <section class="activity-section"><div class="section-heading activity-heading"><h3>Activity</h3><button class="button primary" type="button" data-action="compose"><svg class="plus-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add activity</button></div><div class="activity-tabs" role="group" aria-label="Filter activity">${['all','note','call','email','meeting','other'].map((kind) => `<button type="button" data-action="filter-history" data-kind="${kind}" class="${historyFilter === kind ? 'active' : ''}">${kind === 'all' ? 'All' : kind[0].toUpperCase() + kind.slice(1) + 's'}</button>`).join('')}</div><div id="compose-slot">${composerOpen ? composeForm() : ''}</div><div class="timeline">${history.length ? history.map((entry) => `<article class="activity-entry"><time datetime="${esc(entry.happened_at)}">${esc(humanDate(entry.happened_at))}</time><div class="event-dot"></div><div><strong>${esc(entry.kind[0].toUpperCase() + entry.kind.slice(1))}</strong><p>${esc(entry.body)}</p></div></article>`).join('') : `<p class="quiet timeline-empty">${historyFilter !== 'all' ? 'No activity of this type yet.' : 'No activity yet. Add a note, call, email, or meeting to start the record.'}</p>`}</div>${history.length < historyCount ? `<button class="button subtle history-more" type="button" data-action="more-history">Load more activity</button>` : ''}</section></div>`;
   void hydrateAvatars($('#detail-panel'));
@@ -290,7 +296,7 @@ function recordForm(row?: RecordRow) {
   const isOrg = view === 'organizations';
   const contact = row as Contact | undefined;
   const org = row as Organization | undefined;
-  return `<div class="form-page"><div class="form-heading"><button type="button" class="text-button" data-action="cancel">Back to details</button><h2>${row ? `Edit ${isOrg ? 'organization' : 'contact'}` : `New ${isOrg ? 'organization' : 'contact'}`}</h2><p>${isOrg ? 'Keep the details of this organization together.' : 'Keep the details you need for the next conversation.'}</p></div><form id="record-form" class="record-form"><div class="form-grid">${input('name', 'Name', row?.name, 'text', true)}${isOrg ? input('kind', 'Type', org?.kind || 'other', 'text', true) : input('title', 'Title', contact?.title)}${isOrg ? input('website', 'Website', org?.website, 'url') : input('company', 'Company', contact?.company)}${input('email', 'Email', row?.email, 'email')}${input('phone', 'Phone', row?.phone, 'tel')}${isOrg ? input('address', 'Address', org?.address) : ''}</div><label class="form-field">Information<textarea name="info" rows="5">${esc(row?.info)}</textarea></label><div class="form-actions"><button type="button" class="button outline" data-action="cancel">Cancel</button><button type="submit" class="button primary">${row ? 'Save changes' : `Add ${isOrg ? 'organization' : 'contact'}`}</button></div></form></div>`;
+  return `<div class="form-page"><div class="form-heading"><button type="button" class="text-button" data-action="cancel">Back to details</button><h2>${row ? `Edit ${isOrg ? 'organization' : 'contact'}` : `New ${isOrg ? 'organization' : 'contact'}`}</h2><p>${isOrg ? 'Keep the details of this organization together.' : 'Keep the details you need for the next conversation.'}</p></div><form id="record-form" class="record-form"><div class="form-grid">${input('name', 'Name', row?.name, 'text', true)}${isOrg ? input('kind', 'Type', org?.kind || 'other', 'text', true) : input('title', 'Title', contact?.title)}${isOrg ? input('website', 'Website', org?.website, 'url') : input('company', 'Company', contact?.company)}${isOrg ? `${input('email', 'Email', row?.email, 'email')}${input('phone', 'Phone', row?.phone, 'tel')}` : ''}${isOrg ? input('address', 'Address', org?.address) : ''}</div>${!isOrg ? contactDetailsForm(contact?.details,contact?.email,contact?.phone) : ''}<label class="form-field">Information<textarea name="info" rows="5">${esc(row?.info)}</textarea></label><div class="form-actions"><button type="button" class="button outline" data-action="cancel">Cancel</button><button type="submit" class="button primary">${row ? 'Save changes' : `Add ${isOrg ? 'organization' : 'contact'}`}</button></div></form></div>`;
 }
 
 function composeForm() {
@@ -322,9 +328,9 @@ async function loadLinkChoices(term: string) {
 
 async function saveRecord(form: HTMLFormElement) {
   const fd = new FormData(form);
-  const values: Record<string, string | null> = { name: String(fd.get('name') || '').trim(), email: optional(fd.get('email')), phone: optional(fd.get('phone')), info: optional(fd.get('info')) };
+  const values: Record<string, unknown> = { name: String(fd.get('name') || '').trim(), email: optional(fd.get('email')), phone: optional(fd.get('phone')), info: optional(fd.get('info')) };
   if (!values.name) throw new Error('Add a name before saving.');
-  if (view === 'contacts') { values.title = optional(fd.get('title')); values.company = optional(fd.get('company')); }
+  if (view === 'contacts') { delete values.email; delete values.phone; values.details = readContactDetails(form, (selected as Contact | null)?.details); values.title = optional(fd.get('title')); values.company = optional(fd.get('company')); }
   else { values.kind = String(fd.get('kind') || '').trim() || 'other'; values.website = optional(fd.get('website')); values.address = optional(fd.get('address')); }
   const result = creating
     ? await db.from(view).insert(values).select('id').single()
@@ -355,7 +361,10 @@ async function saveLink(form: HTMLFormElement) {
 }
 
 function setView(next: View) {
-  if (next === view && !connectionsOpen) return;
+  if (next === view && !connectionsOpen && !auditOpen) return;
+  auditOpen = false;
+  auditPage.close();
+  show($('#audit-page'), false);
   connectionsOpen = false;
   show($('#connections-page'), false);
   show($('#records-workspace'), true);
@@ -378,6 +387,9 @@ function setView(next: View) {
 }
 
 function openConnections() {
+  auditOpen = false;
+  auditPage.close();
+  show($('#audit-page'), false);
   connectionsOpen = true;
   // Ignore record responses and debounced searches after leaving that screen.
   listRequest++;
@@ -396,13 +408,30 @@ function openConnections() {
   $('#connections-title').focus();
 }
 
+function openAudit(table = '', record = '') {
+  auditOpen = true;
+  connectionsOpen = false;
+  listRequest++; detailRequest++; linkSearchRequest++;
+  clearTimeout(searchTimer); clearTimeout(linkSearchTimer);
+  show($('#records-workspace'), false);
+  show($('#connections-page'), false);
+  show($('#audit-page'), true);
+  document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach(button => {
+    const active = button.dataset.page === 'audit';
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  void auditPage.open(table, record);
+}
+
 async function startApp() {
   const { data: { user }, error } = await db.auth.getUser();
   const signedIn = Boolean(user && !error);
   if (currentUserId !== (user?.id || null)) { clearImageCache(); currentUserId = user?.id || null; }
   show($('#app'), signedIn);
   show($('#auth-screen'), !signedIn);
-  if (signedIn) { $('#account-email').textContent = user!.email || ''; if (!connectionsOpen) await loadList(); }
+  if (signedIn) { $('#account-email').textContent = user!.email || ''; if (auditOpen) await auditPage.open(); else if (!connectionsOpen) await loadList(); }
 }
 
 $('#auth-form').addEventListener('submit', async (event) => {
@@ -437,9 +466,10 @@ $('#code-form').addEventListener('submit', async (event) => {
   if (!error) await startApp();
 });
 
-$('#sign-out').addEventListener('click', async () => { await db.auth.signOut(); clearImageCache(); selectedId = null; selected = null; await startApp(); });
+$('#sign-out').addEventListener('click', async () => { await db.auth.signOut(); auditPage.close(); if (auditOpen) { document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach(button => { const active = button.dataset.view === view; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); }); } auditOpen = false; show($('#audit-page'), false); show($('#records-workspace'), !connectionsOpen); clearImageCache(); selectedId = null; selected = null; await startApp(); });
 document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach((button) => button.addEventListener('click', () => {
-  if (button.dataset.page === 'connections') openConnections();
+  if (button.dataset.page === 'audit') openAudit();
+  else if (button.dataset.page === 'connections') openConnections();
   else setView(button.dataset.view as View);
 }));
 $('#connections-page').addEventListener('click', async (event) => {
@@ -480,8 +510,10 @@ $('#detail-panel').addEventListener('click', async (event) => {
   if (!button) return;
   const action = button.dataset.action;
   try {
-    if (action === 'choose-photo') { ($('#profile-image-input') as HTMLInputElement).click(); }
+    if (action === 'add-contact-value' || action === 'remove-contact-value') addContactValue(button);
+    else if (action === 'choose-photo') { ($('#profile-image-input') as HTMLInputElement).click(); }
     else if (action === 'remove-photo') await changeProfileImage();
+    else if (action === 'audit' && selected) openAudit(view, selected.id);
     else if (action === 'edit' && selected) { $('#detail-panel').innerHTML = recordForm(selected); }
     else if (action === 'cancel') { if (creating) { creating = false; if (records.length) selectRecord(records[0].id); else renderBlankDetail(); } else if (selectedId) selectRecord(selectedId); }
     else if (action === 'back') $('#detail-panel').classList.remove('mobile-active');

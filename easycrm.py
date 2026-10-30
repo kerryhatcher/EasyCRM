@@ -80,6 +80,18 @@ def history_kind(value):
     return value
 
 
+def contact_details(value):
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("details must be a JSON object") from exc
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter("details must be a JSON object")
+    return parsed
+
+
 def contact_clear(value):
     value = value or []
     if any(field not in FIELDS[1:] for field in value):
@@ -388,17 +400,41 @@ def run(args, client):
             "confirmation_required": not bool(result.get("session")),
         }
 
+    if args.command == "audit":
+        params = {
+            "select": "*",
+            "order": "sequence.desc",
+            "limit": args.limit,
+            "offset": args.offset,
+        }
+        if args.table:
+            params["table_name"] = "eq." + args.table
+        if args.record:
+            params["record_id"] = "eq." + args.record
+        if args.transaction:
+            params["transaction_id"] = "eq." + str(args.transaction)
+        return client.table("GET", "audit_events", params)
+
+    if args.command == "rollback":
+        return client.table(
+            "POST",
+            "rpc/rollback_audit_event",
+            payload={"event_id": args.event_id, "reason": args.reason},
+        )
+
     if args.command == "add":
         payload = {
             field: getattr(args, field)
             for field in FIELDS
             if getattr(args, field) is not None
         }
+        if getattr(args, "details", None) is not None:
+            payload["details"] = args.details
         return one(client.table("POST", "contacts", payload=payload), "contact")
 
     if args.command == "list":
         params = {
-            "select": "id,owner_id,name,email,phone,company,title,info,created_at,updated_at",
+            "select": "id,owner_id,name,email,phone,company,title,info,details,created_at,updated_at",
             "deleted_at": "is.null",
             "order": "name.asc",
             "limit": args.limit,
@@ -603,6 +639,8 @@ def run(args, client):
             for field in FIELDS
             if getattr(args, field) is not None
         }
+        if getattr(args, "details", None) is not None:
+            payload["details"] = args.details
         for field in args.clear:
             payload[field] = None
         if not payload:
@@ -702,6 +740,11 @@ def add(
     company: str | None = None,
     title: str | None = None,
     info: str | None = None,
+    details: str | None = typer.Option(
+        None,
+        callback=contact_details,
+        help="Rich contact details as a JSON object; patches keys, replaces arrays",
+    ),
 ):
     execute(
         "add",
@@ -711,6 +754,7 @@ def add(
         company=company,
         title=title,
         info=info,
+        details=details,
     )
 
 
@@ -905,6 +949,11 @@ def update(
     company: str | None = None,
     title: str | None = None,
     info: str | None = None,
+    details: str | None = typer.Option(
+        None,
+        callback=contact_details,
+        help="Rich contact details as a JSON object; patches keys, replaces arrays",
+    ),
     clear: Annotated[list[str] | None, typer.Option(callback=contact_clear)] = None,
 ):
     execute(
@@ -916,6 +965,7 @@ def update(
         company=company,
         title=title,
         info=info,
+        details=details,
         clear=clear or [],
     )
 
@@ -948,6 +998,54 @@ def history(
     offset: int = typer.Option(0, min=0),
 ):
     execute("history", id=id, limit=limit, offset=offset)
+
+
+AUDIT_TABLES = (
+    "contacts",
+    "organizations",
+    "history",
+    "contact_relationships",
+    "organization_relationships",
+    "contact_organization_relationships",
+)
+
+
+def audit_table(value):
+    if value is not None and value not in AUDIT_TABLES:
+        raise typer.BadParameter("Choose one of: " + ", ".join(AUDIT_TABLES))
+    return value
+
+
+@app.command("audit", help="List change history, including deleted records")
+def audit(
+    table: str | None = typer.Option(None, callback=audit_table),
+    record: Annotated[UUID | None, typer.Option(help="Filter by record UUID")] = None,
+    transaction: int | None = typer.Option(
+        None, min=1, help="Review all changes in a transaction"
+    ),
+    limit: int = typer.Option(50, min=1, max=100),
+    offset: int = typer.Option(0, min=0),
+):
+    execute(
+        "audit",
+        table=table,
+        record=record,
+        transaction=transaction,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.command(
+    "rollback", help="Undo an audit event's entire transaction; refuses newer changes"
+)
+def rollback(
+    event_id: UUID,
+    reason: str = typer.Option(
+        ..., callback=nonempty, help="Why this change is being undone"
+    ),
+):
+    execute("rollback", event_id=event_id, reason=reason)
 
 
 def main():

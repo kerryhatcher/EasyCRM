@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { effectiveContactDetails } from "../_shared/vcard-details.ts";
+import { contactDetailsSchema } from "./contact-schema.ts";
 
 import type { Database } from "./database.types.ts";
 
@@ -17,7 +19,7 @@ const page = {
   offset: z.number().int().min(0).default(0),
 };
 const contactFields =
-  "id,owner_id,name,email,phone,company,title,info,created_at,updated_at";
+  "id,owner_id,name,email,phone,company,title,info,details,created_at,updated_at";
 const organizationFields =
   "id,owner_id,name,kind,email,phone,website,address,info,created_at,updated_at";
 
@@ -232,6 +234,59 @@ async function organizationContacts(client: Client, row: Organization) {
 export function buildServer(client: Client) {
   const server = new McpServer({ name: "easycrm", version: "0.1.0" });
 
+  server.registerTool(
+    "list_audit_events",
+    {
+      description:
+        "List immutable CRM change history with before/after values, actor, and transaction ID, including deleted records. Changes in one transaction are rolled back together.",
+      inputSchema: z.object({
+        table_name: z.enum([
+          "contacts",
+          "organizations",
+          "history",
+          "contact_relationships",
+          "organization_relationships",
+          "contact_organization_relationships",
+        ]).optional(),
+        record_id: uuid.optional(),
+        transaction_id: z.string().regex(/^[1-9][0-9]*$/).refine(
+          (value) => Number.isSafeInteger(Number(value)),
+          "Transaction ID exceeds the supported integer range",
+        ).optional().describe(
+          "Filter to every event in a transaction before rollback",
+        ),
+        ...page,
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    ({ table_name, record_id, transaction_id, limit, offset }) =>
+      runTool(async () => {
+        let query = client.from("audit_events").select("*").order("sequence", {
+          ascending: false,
+        }).range(offset, offset + limit - 1);
+        if (table_name) query = query.eq("table_name", table_name);
+        if (record_id) query = query.eq("record_id", record_id);
+        if (transaction_id) {
+          query = query.eq("transaction_id", Number(transaction_id));
+        }
+        return await unwrap(query);
+      }),
+  );
+
+  server.registerTool(
+    "rollback_audit_event",
+    {
+      description:
+        "Undo the entire transaction containing an audit event. Read the audit history first and explain all affected records to the user. Requires a reason; refuses newer edits, repeated rollbacks, or later dependent records. The rollback is itself audited.",
+      inputSchema: z.object({ event_id: uuid, reason: text.max(2000) }),
+      annotations: { destructiveHint: true, idempotentHint: false },
+    },
+    ({ event_id, reason }) =>
+      runTool(async () =>
+        await unwrap(client.rpc("rollback_audit_event", { event_id, reason }))
+      ),
+  );
+
   server.registerTool("list_contacts", {
     description: "List visible contacts, optionally searching by name",
     inputSchema: z.object({ search: z.string().optional(), ...page }),
@@ -261,7 +316,17 @@ export function buildServer(client: Client) {
         contactLinks(client, row),
         contactOrganizations(client, row),
       ]);
-      return { ...row, history, relationships, organizations };
+      return {
+        ...row,
+        details: effectiveContactDetails({
+          ...row,
+          details: row
+            .details as import("../_shared/contact-details.ts").ContactDetails,
+        }),
+        history,
+        relationships,
+        organizations,
+      };
     }));
 
   server.registerTool("create_contact", {
@@ -273,6 +338,9 @@ export function buildServer(client: Client) {
       company: optionalText,
       title: optionalText,
       info: optionalText,
+      details: contactDetailsSchema.optional().describe(
+        "Rich contact fields. Patches provided detail keys; omitted keys are preserved. Arrays replace in full; read the contact before editing them. Use [] to clear lists, empty strings to clear name parts, and null to clear birthday. Primary email/phone remain compatible aliases.",
+      ),
     }),
   }, (values) =>
     runTool(() => {
@@ -294,6 +362,9 @@ export function buildServer(client: Client) {
       company: optionalText,
       title: optionalText,
       info: optionalText,
+      details: contactDetailsSchema.optional().describe(
+        "Rich contact fields. Patches provided detail keys; omitted keys are preserved. Arrays replace in full; read the contact before editing them. Use [] to clear lists, empty strings to clear name parts, and null to clear birthday. Primary email/phone remain compatible aliases.",
+      ),
     }),
   }, ({ id, ...changes }) =>
     runTool(async () => {

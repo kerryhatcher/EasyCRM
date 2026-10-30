@@ -1,3 +1,6 @@
+import { cardCompany, readCardDetails, renderContactCard } from "../_shared/vcard-details.ts";
+import type { ContactDetails } from "../_shared/contact-details.ts";
+import { primaryValue } from "../_shared/contact-details.ts";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 type Contact = {
@@ -9,6 +12,7 @@ type Contact = {
   company: string | null;
   title: string | null;
   info: string | null;
+  details?: ContactDetails;
   carddav_href: string;
   carddav_uid: string | null;
   carddav_vcard: string | null;
@@ -40,7 +44,7 @@ class HttpError extends Error {
 const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true,
   parseTagValue: false, ignoreDeclaration: true });
 const authCache = new Map<string, { token: string; userId: string; until: number }>();
-const SELECT = "id,owner_id,name,email,phone,company,title,info,carddav_href,carddav_uid,carddav_vcard,updated_at,deleted_at";
+const SELECT = "id,owner_id,name,email,phone,company,title,info,details,carddav_href,carddav_uid,carddav_vcard,updated_at,deleted_at";
 const DAV_HEADERS = { "DAV": "1, 3, addressbook", "Allow": "OPTIONS, PROPFIND, REPORT, GET, PUT, DELETE" };
 const PUBLIC_BASE = "/functions/v1/carddav";
 const PUBLIC_ORIGIN = "https://crm-api.kerryhatcher.com";
@@ -173,11 +177,6 @@ function unescapeV(value: string): string {
   return value.replace(/\\([nN,;\\])/g, (_match, char: string) => char.toLowerCase() === "n" ? "\n" : char);
 }
 
-function escapeV(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\r\n", "\n").replaceAll("\r", "\n")
-    .replaceAll("\n", "\\n").replaceAll(";", "\\;").replaceAll(",", "\\,");
-}
-
 function linesOf(card: string): string[] {
   const result: string[] = [];
   for (const line of card.replace(/\r\n|\r/g, "\n").split("\n")) {
@@ -216,59 +215,12 @@ function parseCard(body: string): Card {
   const uid = first(lines, "UID");
   const name = first(lines, "FN");
   if (!uid || !name?.trim()) throw new HttpError(422, "vCard needs UID and FN");
-  return { uid, version, name: name.trim(), email: first(lines, "EMAIL"),
-    phone: first(lines, "TEL"), company: first(lines, "ORG"),
+  return { uid, version, name: name.trim(), email: primaryValue(readCardDetails(body).emails),
+    phone: primaryValue(readCardDetails(body).phones), company: cardCompany(body),
     title: first(lines, "TITLE"), info: first(lines, "NOTE"), raw: lines.join("\r\n") + "\r\n" };
 }
 
-function nValue(name: string): string {
-  const pieces = name.trim().split(/\s+/);
-  const family = pieces.length > 1 ? pieces.pop()! : "";
-  return `${escapeV(family)};${escapeV(pieces.join(" "))};;;`;
-}
-
-function vcard(contact: Contact): string {
-  const uid = contact.carddav_uid || contact.id;
-  const fields: Record<string, string | null> = {
-    UID: uid, FN: contact.name, EMAIL: contact.email, TEL: contact.phone,
-    ORG: contact.company, TITLE: contact.title, NOTE: contact.info,
-  };
-  if (!contact.carddav_vcard) {
-    const lines = ["BEGIN:VCARD", "VERSION:3.0", `UID:${escapeV(uid)}`,
-      `N:${nValue(contact.name)}`, `FN:${escapeV(contact.name)}`];
-    for (const key of ["EMAIL", "TEL", "ORG", "TITLE", "NOTE"]) {
-      if (fields[key]) lines.push(`${key}:${escapeV(fields[key]!)}`);
-    }
-    return [...lines, "END:VCARD", ""].join("\r\n");
-  }
-  const lines = linesOf(contact.carddav_vcard);
-  const original = parseCard(contact.carddav_vcard);
-  const changed = new Set<string>();
-  for (const [key, value] of Object.entries(fields)) {
-    const previous = key === "UID" ? original.uid : key === "FN" ? original.name :
-      key === "EMAIL" ? original.email : key === "TEL" ? original.phone :
-      key === "ORG" ? original.company : key === "TITLE" ? original.title : original.info;
-    if ((value || null) !== (previous || null)) changed.add(key);
-  }
-  if (!changed.size) return lines.join("\r\n") + "\r\n";
-  if (changed.has("FN")) changed.add("N");
-  const replaced = new Set<string>();
-  const output: string[] = [];
-  for (const line of lines) {
-    const key = property(line)?.name || "";
-    if (changed.has(key) && fields[key] === null && replaced.has(key)) continue;
-    if (changed.has(key) && !replaced.has(key)) {
-      replaced.add(key);
-      const value = key === "N" ? nValue(contact.name) : fields[key];
-      if (value !== null && value !== undefined) output.push(`${key}:${key === "N" ? value : escapeV(value)}`);
-    } else output.push(line);
-  }
-  const end = output.findIndex((line) => line.toUpperCase() === "END:VCARD");
-  for (const key of changed) {
-    if (!replaced.has(key) && key !== "N" && fields[key]) output.splice(end, 0, `${key}:${escapeV(fields[key]!)}`);
-  }
-  return output.join("\r\n") + "\r\n";
-}
+function vcard(contact: Contact): string { return renderContactCard(contact); }
 
 async function etag(contact: Contact): Promise<string> {
   return `"${await sha256(vcard(contact))}"`;
@@ -286,7 +238,7 @@ function principalProps(ctx: Context, base: string): string {
     `<C:addressbook-home-set><D:href>${escapeXml(p.home)}</D:href></C:addressbook-home-set>`;
 }
 
-function homeProps(ctx: Context, base: string): string {
+function homeProps(_ctx: Context, base: string): string {
   return `<D:resourcetype><D:collection/></D:resourcetype><D:displayname>Address Books</D:displayname>` +
     `<D:current-user-principal><D:href>${escapeXml(paths(base).principal)}</D:href></D:current-user-principal>`;
 }
@@ -429,7 +381,7 @@ async function putCard(ctx: Context, path: string, request: Request): Promise<Re
   if (active && card.uid !== (old.carddav_uid || old.id)) throw new HttpError(409, "vCard UID cannot change");
   const fields = { name: card.name, email: card.email, phone: card.phone,
     company: card.company, title: card.title, info: card.info,
-    carddav_uid: card.uid, carddav_vcard: card.raw, deleted_at: null };
+    carddav_uid: card.uid, carddav_vcard: card.raw, details: readCardDetails(card.raw), deleted_at: null };
   let saved: Contact[];
   if (old) {
     saved = await db(ctx, "PATCH", query(ctx, { id: `eq.${old.id}`, updated_at: `eq.${old.updated_at}` }), fields);

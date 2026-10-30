@@ -51,6 +51,25 @@ The database schema is already installed in the **EasyCRM** Supabase project. It
 
 `--at` on `note` and `log` records an earlier event time in ISO 8601 with a timezone. `list` and `history` support `--limit` (1–100) and `--offset` for paging. Run `uv run python easycrm.py --help` or a subcommand's `--help` for all options.
 
+## Audit history and rollback
+
+The **Audit & history** page records database changes to contacts, organizations,
+activity, and relationships with their before/after values, actor, and time. Owners
+can review their records and undo a change; admins can review all owners. Rollback
+undoes the whole transaction, preserves the audit trail, and refuses newer edits
+or unsafe dependent records. Reads are not logged.
+
+Apply [`supabase/migrations/20261030215720_audit_history.sql`](supabase/migrations/20261030215720_audit_history.sql)
+after `sql/008_contact_details.sql`, then deploy the updated web app and MCP function.
+See [audit setup, behavior, and verification](docs/audit-history.md). History starts
+when the migration is installed; R2 profile images are outside the record audit.
+
+```sh
+uv run python easycrm.py audit --table contacts --record CONTACT_UUID
+uv run python easycrm.py audit --transaction TRANSACTION_ID
+uv run python easycrm.py rollback AUDIT_EVENT_UUID --reason "Correct accidental edit"
+```
+
 ## Organizations
 
 Organizations have their own name, type (`--kind`), email, phone, website, address, and freeform `info`. The type is freeform, so it can be `business`, `department`, `agency`, `club`, or something else. The existing contact `company` field remains free text; use a contact–organization link when you want a structured relationship.
@@ -145,3 +164,7 @@ uv run ruff format --check .
 uv run ruff check .
 uv run python -m unittest discover -s tests
 ```
+
+### Rich contact fields
+
+The contact data model supports structured names, multiple labeled emails/phones/addresses/websites, birthdays, tags, social profiles, and preserved vCard metadata. Apply `sql/008_contact_details.sql` before deploying the updated services. See [the rich contact API documentation](docs/contact-details.md) for payloads, patch semantics, backward compatibility, and verification. This does not add a bulk importer.
