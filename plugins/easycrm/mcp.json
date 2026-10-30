@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "easycrm": {
+      "type": "streamable-http",
+      "url": "https://crm-api.kerryhatcher.com/functions/v1/crm-mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "baseScopes": ["openid", "email"],
+            "defaultScopes": ["openid", "email", "offline_access"],
+            "oidcEnabled": true
+          }
+        }
+      }
+    }
+  }
+}

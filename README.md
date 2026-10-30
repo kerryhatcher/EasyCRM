@@ -79,6 +79,21 @@ For an agent with shell access, give it the path to `easycrm.py`, the environmen
 
 The publishable key is safe to distribute. The Auth password and access token are secrets. Every command signs in as the user. Supabase row-level security limits regular users to their own records. A user with `app_metadata.crm_role = "admin"` can read and update all contacts and organizations, add or read history, and manage relationships for any owner's records. Only a trusted Supabase administrator should assign this role; a fresh sign-in is needed after changing it. The CLI never uses a service-role key. History entries are append-only through the CLI; there is no delete command.
 
+## ChatGPT plugin
+
+The shareable plugin source is in [`plugins/easycrm/`](plugins/easycrm/), including
+the manifests, CRM workflow skill, icon, and OAuth setup instructions. Build an
+installable ZIP with:
+
+```sh
+python scripts/package_plugin.py --output /tmp/easycrm-plugin.zip
+```
+
+The plugin connects to the existing OAuth-protected MCP server. Each host needs
+an OAuth client registration with its exact callback URL, and each user signs
+in to their own CRM account. The package contains no credentials. See the
+[plugin README](plugins/easycrm/README.md) for installation and sharing.
+
 ## Web MCP endpoint
 
 The remote MCP URL is:
